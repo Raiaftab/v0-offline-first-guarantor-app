@@ -126,8 +126,6 @@ export default function GuarantorInfoGenerator() {
   const [reducedMotion, setReducedMotion] = useState(false);
   const file1Ref = useRef<HTMLInputElement>(null);
   const file2Ref = useRef<HTMLInputElement>(null);
-  const dropzone1Ref = useRef<HTMLDivElement>(null);
-  const dropzone2Ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("cnic-merger-reduced-motion");
@@ -140,13 +138,12 @@ export default function GuarantorInfoGenerator() {
     infoSetter: React.Dispatch<
       React.SetStateAction<{ name: string; size: string }>
     >,
-    defaultInfoText: string
   ) => {
     const file = e.target.files?.[0] || null;
     fileSetter(file);
     infoSetter({
       name: file ? file.name : "No file chosen",
-      size: file ? `${humanSize(file.size)} | ${defaultInfoText}` : defaultInfoText,
+      size: file ? humanSize(file.size) : "",
     });
   };
 
@@ -166,7 +163,6 @@ export default function GuarantorInfoGenerator() {
     infoSetter: React.Dispatch<
       React.SetStateAction<{ name: string; size: string }>
     >,
-    defaultInfoText: string
   ) => {
     e.preventDefault();
     e.currentTarget.classList.remove("dragover");
@@ -175,9 +171,10 @@ export default function GuarantorInfoGenerator() {
       fileSetter(file);
       infoSetter({
         name: file.name,
-        size: `${humanSize(file.size)} | ${defaultInfoText}`,
+        size: humanSize(file.size),
       });
     } else if (file) {
+      // NOTE: Using window.alert for simplicity in this sandbox
       alert("Invalid file type. Please upload an .xlsx or .xls file.");
     }
   };
@@ -193,6 +190,7 @@ export default function GuarantorInfoGenerator() {
 
   const processFiles = async () => {
     if (!XLSX) {
+      // NOTE: Using window.alert for simplicity in this sandbox
       alert("XLSX library not loaded. Please try again.");
       return;
     }
@@ -368,14 +366,13 @@ export default function GuarantorInfoGenerator() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 p-4 md:p-8 relative overflow-hidden">
-      {/* Animated background */}
+      {/* Animated background & Keyframes (THEME IMPROVEMENT) */}
       <div 
         className={`fixed inset-0 z-[-2] bg-gradient-to-r from-blue-900 via-indigo-900 to-purple-900 bg-[length:300%_300%] ${
           !reducedMotion ? "animate-gradientShift" : ""
         } filter blur-[30px] contrast-[1.05] saturate-[1.05] opacity-95`}
       />
       
-      {/* Gradient animation keyframes */}
       <style jsx>{`
         @keyframes gradientShift {
           0% { background-position: 0% 50%; }
@@ -389,33 +386,34 @@ export default function GuarantorInfoGenerator() {
 
       <div className="container mx-auto min-h-screen flex items-center justify-center py-10">
         <div 
-          className={`w-full max-w-4xl p-6 md:p-8 rounded-2xl bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-white/10 backdrop-blur-lg shadow-2xl relative overflow-hidden transform transition-all duration-400 ${
+          className={`w-full max-w-4xl p-6 md:p-8 rounded-3xl bg-gradient-to-br from-blue-900/40 to-purple-900/40 border-2 border-white/20 backdrop-blur-xl shadow-3xl relative overflow-hidden transform transition-all duration-400 ${
             !reducedMotion ? "hover:-translate-y-2 hover:scale-[1.01]" : ""
-          }`}
+          } shadow-[0_0_50px_rgba(59,130,246,0.3)]`} /* Fix applied here by ensuring the structure is clean */
         >
-          {/* Decorative elements */}
-          <div className="absolute -right-20 -top-10 w-[420px] h-[420px] bg-gradient-to-br from-cyan-400/10 to-purple-400/10 rotate-[22deg] blur-[36px] pointer-events-none" />
+          {/* Decorative elements (THEME IMPROVEMENT) */}
+          <div className="absolute -right-16 -top-16 w-80 h-80 bg-cyan-400/10 rounded-full blur-3xl opacity-50 pointer-events-none" />
+          <div className="absolute -left-16 bottom-0 w-80 h-80 bg-purple-400/10 rounded-full blur-3xl opacity-50 pointer-events-none" />
           
           {/* Header */}
-          <div className="flex flex-col items-start mb-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-2">
-              <span>Guarantor Info Sheet Generator</span>
-              <span className="text-2xl">💾</span>
+          <div className="flex flex-col items-start mb-10">
+            <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-wide flex items-center gap-3">
+              <span className="text-cyan-400">🔗</span>
+              <span>Excel Data Merger</span>
             </h1>
+            <p className="text-lg text-blue-200 mt-2">Guarantor Info Sheet Generator</p>
           </div>
 
           {/* File inputs */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
             {/* File 1 - Guarantor Info */}
             <div className="flex flex-col">
-              <label htmlFor="sheet1" className="font-semibold text-white mb-2">
+              <label htmlFor="sheet1" className="font-semibold text-cyan-300 mb-2 text-lg">
                 1. Guarantor Info (Report 24)
               </label>
               <div
-                ref={dropzone1Ref}
-                className={`p-4 rounded-xl border-2 border-dashed border-white/20 bg-gradient-to-b from-white/5 to-white/2 flex items-center gap-4 transition-all ${
-                  file1 ? "border-cyan-400/50" : ""
-                }`}
+                className={`group p-6 rounded-xl border-2 border-dashed border-cyan-400/50 bg-white/5 hover:bg-white/10 flex items-center gap-4 transition-all duration-300 cursor-pointer ${
+                  file1 ? "border-cyan-400 shadow-lg shadow-cyan-500/10" : "border-white/30"
+                } dragover:!border-cyan-300 dragover:!bg-white/10`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) =>
@@ -423,7 +421,6 @@ export default function GuarantorInfoGenerator() {
                     e,
                     setFile1,
                     setFile1Info,
-                    "Upload Guarantor Report"
                   )
                 }
                 onClick={() => handleClick(file1Ref)}
@@ -431,8 +428,8 @@ export default function GuarantorInfoGenerator() {
                 role="button"
                 aria-label="Drop Guarantor Info sheet here"
               >
-                <span className="text-2xl text-cyan-400">
-                  <i className="fas fa-file-excel"></i>
+                <span className="text-3xl text-cyan-400 transition-transform group-hover:scale-110">
+                  📄
                 </span>
                 <input
                   type="file"
@@ -445,7 +442,6 @@ export default function GuarantorInfoGenerator() {
                       e,
                       setFile1,
                       setFile1Info,
-                      "CNIC expected in column D (index 3)."
                     )
                   }
                 />
@@ -454,7 +450,9 @@ export default function GuarantorInfoGenerator() {
                     {file1Info.name}
                   </div>
                   <div className="text-blue-200 text-sm">
-                    {file1Info.size || "CNIC is expected in column D (index 3)."}
+                    {file1Info.size || "Drop file here or click to select."}
+                    {file1 && <span className="ml-2 text-xs text-cyan-300/70 block md:inline"> (CNIC in Col D / Index 3)</span>}
+                    {!file1 && <span className="text-xs text-cyan-300/70 block">CNIC expected in Column D (Index 3).</span>}
                   </div>
                 </div>
               </div>
@@ -462,14 +460,13 @@ export default function GuarantorInfoGenerator() {
 
             {/* File 2 - Active Client List */}
             <div className="flex flex-col">
-              <label htmlFor="sheet2" className="font-semibold text-white mb-2">
+              <label htmlFor="sheet2" className="font-semibold text-purple-300 mb-2 text-lg">
                 2. Active Client List (Report 12)
               </label>
               <div
-                ref={dropzone2Ref}
-                className={`p-4 rounded-xl border-2 border-dashed border-white/20 bg-gradient-to-b from-white/5 to-white/2 flex items-center gap-4 transition-all ${
-                  file2 ? "border-cyan-400/50" : ""
-                }`}
+                className={`group p-6 rounded-xl border-2 border-dashed border-purple-400/50 bg-white/5 hover:bg-white/10 flex items-center gap-4 transition-all duration-300 cursor-pointer ${
+                  file2 ? "border-purple-400 shadow-lg shadow-purple-500/10" : "border-white/30"
+                } dragover:!border-purple-300 dragover:!bg-white/10`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) =>
@@ -477,7 +474,6 @@ export default function GuarantorInfoGenerator() {
                     e,
                     setFile2,
                     setFile2Info,
-                    "Upload Active Clients Report"
                   )
                 }
                 onClick={() => handleClick(file2Ref)}
@@ -485,8 +481,8 @@ export default function GuarantorInfoGenerator() {
                 role="button"
                 aria-label="Drop Active Client List sheet here"
               >
-                <span className="text-2xl text-cyan-400">
-                  <i className="fas fa-file-excel"></i>
+                <span className="text-3xl text-purple-400 transition-transform group-hover:scale-110">
+                  📋
                 </span>
                 <input
                   type="file"
@@ -499,7 +495,6 @@ export default function GuarantorInfoGenerator() {
                       e,
                       setFile2,
                       setFile2Info,
-                      "Client CNIC expected in column N (index 13)."
                     )
                   }
                 />
@@ -508,104 +503,114 @@ export default function GuarantorInfoGenerator() {
                     {file2Info.name}
                   </div>
                   <div className="text-blue-200 text-sm">
-                    {file2Info.size || "Client CNIC is expected in column N (index 13)."}
+                    {file2Info.size || "Drop file here or click to select."}
+                    {file2 && <span className="ml-2 text-xs text-purple-300/70 block md:inline"> (Client CNIC in Col N / Index 13)</span>}
+                    {!file2 && <span className="text-xs text-purple-300/70 block">Client CNIC expected in Column N (Index 13).</span>}
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Action button */}
-          <div className="flex flex-col sm:flex-row gap-4 items-center">
+          {/* Action button & Controls (BUTTON IMPROVEMENT) */}
+          <div className="flex flex-col gap-6">
             <button
               id="merge-btn"
               onClick={processFiles}
               disabled={isProcessing || !file1 || !file2 || !XLSX}
-              className={`w-full sm:w-auto h-14 px-6 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all duration-300 ${
+              className={`w-full h-16 rounded-xl font-bold text-xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl ${
                 isProcessing
-                  ? "bg-purple-600 text-white"
+                  ? "bg-purple-600 text-white shadow-purple-600/50 cursor-progress"
                   : isSuccess
-                  ? "bg-green-500 text-green-900"
+                  ? "bg-green-500 text-green-900 shadow-green-500/50"
                   : isError
-                  ? "bg-red-500 text-red-900"
+                  ? "bg-red-500 text-red-900 shadow-red-500/50"
                   : file1 && file2 && XLSX
-                  ? "bg-gradient-to-r from-cyan-400 to-purple-500 text-blue-900 hover:from-cyan-300 hover:to-purple-400 hover:shadow-lg hover:-translate-y-1"
-                  : "bg-gray-600 text-gray-300 cursor-not-allowed"
+                  ? "bg-gradient-to-r from-cyan-400 to-purple-500 text-gray-900 hover:from-cyan-300 hover:to-purple-400 hover:shadow-2xl hover:shadow-purple-500/50 hover:-translate-y-1 active:translate-y-0 active:shadow-lg"
+                  : "bg-gray-700 text-gray-400 cursor-not-allowed shadow-none"
               }`}
+              title={
+                !XLSX ? "Loading Library..." : !file1 || !file2 ? "Please select both files" : "Click to merge and download"
+              }
             >
               {isProcessing ? (
                 <>
                   <i className="fas fa-cogs animate-spin"></i>
-                  <span>Processing...</span>
+                  <span>Processing... ({progress}%)</span>
                 </>
               ) : isSuccess ? (
                 <>
                   <i className="fas fa-check-circle"></i>
-                  <span>Export Complete!</span>
+                  <span>Export Complete! Downloaded.</span>
                 </>
               ) : isError ? (
                 <>
                   <i className="fas fa-exclamation-triangle"></i>
-                  <span>Export Failed</span>
+                  <span>Process Failed! (Check Console)</span>
                 </>
               ) : !XLSX ? (
                 <>
                   <i className="fas fa-spinner animate-spin"></i>
-                  <span>Loading Library...</span>
+                  <span>Loading XLSX Library...</span>
                 </>
               ) : (
                 <>
                   <i className="fas fa-file-download"></i>
-                  <span>Generate Guarantor Excel Sheet</span>
+                  <span>GENERATE MERGED EXCEL SHEET</span>
                 </>
               )}
             </button>
 
-            <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto mt-4 sm:mt-0">
-              <p className="text-blue-200 text-sm text-center sm:text-left">
-                Supports .xlsx and .xls. Processing is done locally in your browser.
-              </p>
-              <div className="flex items-center gap-2">
+            {/* Minor controls/info */}
+            <div className="flex justify-between items-center text-blue-200 text-sm">
+              <div className="flex items-center gap-4">
+                <p>
+                  Processing is done **locally** in your browser.
+                </p>
+                <div className="text-blue-200/50 hidden sm:block">|</div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={reducedMotion}
                     onChange={toggleReducedMotion}
-                    className="w-4 h-4"
+                    className="w-4 h-4 bg-transparent border-blue-400 rounded focus:ring-cyan-500 text-cyan-400"
                   />
-                  <span className="text-blue-200 text-sm">Reduce motion</span>
+                  <span className="text-blue-200 text-sm hover:text-cyan-300 transition-colors">Reduce motion</span>
                 </label>
-                <div className="text-blue-200 text-sm">Designed By AAO</div>
               </div>
+              <div className="text-blue-300 font-medium">Designed By AAO</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Progress overlay */}
+      {/* Progress overlay (THEME IMPROVEMENT) */}
       {(isProcessing || isSuccess || isError) && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50">
-          <div className="w-full max-w-md p-6 rounded-xl bg-gradient-to-b from-blue-900/30 to-purple-900/30 border border-white/10 backdrop-blur-lg">
-            <div className="font-bold text-white mb-3">
+        <div className="fixed inset-0 flex items-center justify-center bg-black/80 z-50 transition-opacity duration-300">
+          <div className={`w-full max-w-md p-8 rounded-xl bg-gradient-to-b from-blue-800/80 to-purple-800/80 border-2 border-cyan-400/50 backdrop-blur-xl shadow-2xl transition-transform duration-500 ${!isProcessing ? 'scale-105' : 'scale-100'}`}>
+            <div className="font-extrabold text-white text-lg mb-4 flex items-center gap-2">
+              {isProcessing && <i className="fas fa-rocket animate-pulse text-cyan-400"></i>}
+              {isSuccess && <i className="fas fa-check-double text-green-400"></i>}
+              {isError && <i className="fas fa-bomb text-red-400"></i>}
               {isProcessing
                 ? progress < 10
-                  ? "Reading files"
+                  ? "Initializing Warp Drive"
                   : progress < 60
-                  ? "Processing data"
+                  ? "Scanning Client Database"
                   : progress < 95
-                  ? "Matching & Compiling"
-                  : "Finalizing export"
+                  ? "Synchronizing Data Streams"
+                  : "Finalizing Download"
                 : isSuccess
-                ? "Export complete"
-                : "Export failed"}
+                ? "Mission Complete!"
+                : "Mission Aborted"}
             </div>
-            <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+            <div className="h-3 bg-white/20 rounded-full overflow-hidden mb-3">
               <div
                 className="h-full bg-gradient-to-r from-cyan-400 to-purple-500 transition-all duration-300"
                 style={{ width: `${progress}%` }}
               ></div>
             </div>
-            <div className="text-blue-200 text-sm mt-3">{progressText}</div>
+            <div className="text-blue-200 text-sm">{progressText}</div>
           </div>
         </div>
       )}
