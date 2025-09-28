@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { guarantorDB, type GuarantorRecord } from "@/lib/db"
+import GuarantorInfoGenerator from "@/components/guarantor-info-generator"
 
 const USER_PASS_KEY = "userPassword"
 const ADMIN_PASS_KEY = "adminPassword"
@@ -467,9 +468,7 @@ export default function GuarantorApp() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="w-full h-[600px] border border-purple-400/30 rounded-lg overflow-hidden">
-                <iframe src="/reports.html" className="w-full h-full" title="Report Generator" />
-              </div>
+              <GuarantorInfoGenerator />
             </CardContent>
           </Card>
         )}
