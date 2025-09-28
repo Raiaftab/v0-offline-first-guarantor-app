@@ -9,7 +9,7 @@ export interface GuarantorRecord {
 
 const DB_NAME = "GuarantorDB"
 const STORE_NAME = "records"
-const DB_VERSION = 3 // Increment version for schema update
+const DB_VERSION = 4 // Increment version to fix schema issues
 
 export class GuarantorDB {
   private static instance: GuarantorDB
@@ -32,30 +32,61 @@ export class GuarantorDB {
 
       request.onupgradeneeded = (e) => {
         const db = (e.target as IDBOpenDBRequest).result
+        const oldVersion = e.oldVersion
 
-        // Delete existing store if it exists to recreate with proper schema
-        if (db.objectStoreNames.contains(STORE_NAME)) {
-          db.deleteObjectStore(STORE_NAME)
+        console.log("[v0] Database upgrade needed. Old version:", oldVersion, "New version:", DB_VERSION)
+
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          console.log("[v0] Creating new records store")
+          // Create records store
+          const store = db.createObjectStore(STORE_NAME, {
+            keyPath: "id",
+            autoIncrement: true,
+          })
+
+          store.createIndex("clientId", "clientId", { unique: false })
+          store.createIndex("name", "name", { unique: false })
+          store.createIndex("coName", "coName", { unique: false })
+          store.createIndex("branch", "branch", { unique: false })
+        } else {
+          console.log("[v0] Records store already exists, preserving data")
+          // Store exists, just ensure indexes are present
+          const transaction = e.target.transaction
+          if (transaction) {
+            const store = transaction.objectStore(STORE_NAME)
+
+            // Add missing indexes if they don't exist
+            if (!store.indexNames.contains("clientId")) {
+              store.createIndex("clientId", "clientId", { unique: false })
+            }
+            if (!store.indexNames.contains("name")) {
+              store.createIndex("name", "name", { unique: false })
+            }
+            if (!store.indexNames.contains("coName")) {
+              store.createIndex("coName", "coName", { unique: false })
+            }
+            if (!store.indexNames.contains("branch")) {
+              store.createIndex("branch", "branch", { unique: false })
+            }
+          }
         }
-
-        // Create records store
-        const store = db.createObjectStore(STORE_NAME, {
-          keyPath: "id",
-          autoIncrement: true,
-        })
-
-        store.createIndex("clientId", "clientId", { unique: false })
-        store.createIndex("name", "name", { unique: false })
-        store.createIndex("coName", "coName", { unique: false })
-        store.createIndex("branch", "branch", { unique: false })
       }
 
       request.onsuccess = (e) => {
         this.db = (e.target as IDBOpenDBRequest).result
+        console.log("[v0] Database opened successfully")
         resolve(this.db)
       }
 
-      request.onerror = (e) => reject(e)
+      request.onerror = (e) => {
+        console.log("[v0] Database open error:", e)
+        reject(e)
+      }
+
+      request.onblocked = (e) => {
+        console.log("[v0] Database open blocked:", e)
+        // Handle blocked event - usually means another tab has the database open
+      }
     })
   }
 
@@ -73,84 +104,93 @@ export class GuarantorDB {
     console.log("[v0] Starting clearAndSave with", data.length, "records")
     const db = await this.openDB()
 
-    // First clear existing data
-    console.log("[v0] Clearing existing data...")
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite")
-      const store = tx.objectStore(STORE_NAME)
+    try {
+      // First clear existing data
+      console.log("[v0] Clearing existing data...")
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite")
+        const store = tx.objectStore(STORE_NAME)
 
-      const clearRequest = store.clear()
-      clearRequest.onsuccess = () => {
-        console.log("[v0] Data cleared successfully")
-        resolve()
-      }
-      clearRequest.onerror = (e) => {
-        console.log("[v0] Error clearing data:", e)
-        reject(e)
-      }
-    })
+        // Add transaction timeout
+        const timeoutId = setTimeout(() => {
+          console.log("[v0] Clear transaction timeout")
+          reject(new Error("Clear transaction timeout"))
+        }, 30000) // 30 second timeout
 
-    const batchSize = 25 // Even smaller batches for better reliability
-    const totalRecords = data.length
-    let processedRecords = 0
+        tx.oncomplete = () => {
+          clearTimeout(timeoutId)
+          console.log("[v0] Clear transaction completed")
+          resolve()
+        }
 
-    console.log("[v0] Starting to save", totalRecords, "records in batches of", batchSize)
+        tx.onerror = (e) => {
+          clearTimeout(timeoutId)
+          console.log("[v0] Clear transaction error:", e)
+          reject(e)
+        }
 
-    for (let i = 0; i < totalRecords; i += batchSize) {
-      const batch = data.slice(i, i + batchSize)
-      const normalizedBatch = batch.map((record) => this.normalizeRecord(record))
+        tx.onabort = (e) => {
+          clearTimeout(timeoutId)
+          console.log("[v0] Clear transaction aborted:", e)
+          reject(new Error("Clear transaction aborted"))
+        }
 
-      console.log(
-        "[v0] Processing batch",
-        Math.floor(i / batchSize) + 1,
-        "of",
-        Math.ceil(totalRecords / batchSize),
-        "with",
-        normalizedBatch.length,
-        "records",
-      )
+        const clearRequest = store.clear()
+        clearRequest.onsuccess = () => {
+          console.log("[v0] Data cleared successfully")
+        }
+        clearRequest.onerror = (e) => {
+          clearTimeout(timeoutId)
+          console.log("[v0] Error clearing data:", e)
+          reject(e)
+        }
+      })
 
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(STORE_NAME, "readwrite")
-          const store = tx.objectStore(STORE_NAME)
+      const batchSize = 50 // Increase batch size for better performance
+      const totalRecords = data.length
+      let processedRecords = 0
 
-          let completed = 0
-          let hasError = false
-          const batchLength = normalizedBatch.length
+      console.log("[v0] Starting to save", totalRecords, "records in batches of", batchSize)
 
-          // Handle transaction errors
-          tx.onerror = (e) => {
-            console.log("[v0] Transaction error in batch:", e)
-            if (!hasError) {
-              hasError = true
-              reject(e)
-            }
-          }
+      for (let i = 0; i < totalRecords; i += batchSize) {
+        const batch = data.slice(i, i + batchSize)
+        const normalizedBatch = batch.map((record) => this.normalizeRecord(record))
 
-          tx.onabort = (e) => {
-            console.log("[v0] Transaction aborted in batch:", e)
-            if (!hasError) {
-              hasError = true
-              reject(new Error("Transaction aborted"))
-            }
-          }
+        console.log(
+          "[v0] Processing batch",
+          Math.floor(i / batchSize) + 1,
+          "of",
+          Math.ceil(totalRecords / batchSize),
+          "with",
+          normalizedBatch.length,
+          "records",
+        )
 
-          // Add all records in the batch
-          normalizedBatch.forEach((item, index) => {
-            if (hasError) return
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, "readwrite")
+            const store = tx.objectStore(STORE_NAME)
 
-            const request = store.add(item)
+            let completed = 0
+            let hasError = false
+            const batchLength = normalizedBatch.length
 
-            request.onsuccess = () => {
-              completed++
-              console.log("[v0] Record", index + 1, "of", batchLength, "saved in current batch")
+            const timeoutId = setTimeout(() => {
+              if (!hasError) {
+                hasError = true
+                console.log("[v0] Batch transaction timeout")
+                reject(new Error("Batch transaction timeout"))
+              }
+            }, 60000) // 60 second timeout per batch
 
-              if (completed === batchLength) {
+            // Handle transaction completion
+            tx.oncomplete = () => {
+              clearTimeout(timeoutId)
+              if (!hasError) {
                 processedRecords += batchLength
                 const progress = Math.round((processedRecords / totalRecords) * 100)
                 console.log(
-                  "[v0] Batch completed. Progress:",
+                  "[v0] Batch transaction completed. Progress:",
                   progress + "%",
                   "(" + processedRecords + "/" + totalRecords + ")",
                 )
@@ -159,27 +199,64 @@ export class GuarantorDB {
               }
             }
 
-            request.onerror = (e) => {
-              console.log("[v0] Error saving record", index + 1, "in batch:", e)
+            // Handle transaction errors
+            tx.onerror = (e) => {
+              clearTimeout(timeoutId)
+              console.log("[v0] Batch transaction error:", e)
               if (!hasError) {
                 hasError = true
                 reject(e)
               }
             }
+
+            tx.onabort = (e) => {
+              clearTimeout(timeoutId)
+              console.log("[v0] Batch transaction aborted:", e)
+              if (!hasError) {
+                hasError = true
+                reject(new Error("Batch transaction aborted"))
+              }
+            }
+
+            // Add all records in the batch
+            normalizedBatch.forEach((item, index) => {
+              if (hasError) return
+
+              const request = store.add(item)
+
+              request.onsuccess = () => {
+                completed++
+                if (completed === batchLength) {
+                  // Transaction will complete automatically
+                  console.log("[v0] All", batchLength, "records added to batch")
+                }
+              }
+
+              request.onerror = (e) => {
+                clearTimeout(timeoutId)
+                console.log("[v0] Error saving record", index + 1, "in batch:", e)
+                if (!hasError) {
+                  hasError = true
+                  reject(e)
+                }
+              }
+            })
           })
-        })
 
-        // Small delay between batches to prevent overwhelming the browser
-        if (i + batchSize < totalRecords) {
-          await new Promise((resolve) => setTimeout(resolve, 50))
+          if (i + batchSize < totalRecords) {
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          }
+        } catch (error) {
+          console.log("[v0] Error in batch processing:", error)
+          throw error
         }
-      } catch (error) {
-        console.log("[v0] Error in batch processing:", error)
-        throw error
       }
-    }
 
-    console.log("[v0] All batches completed successfully. Total records saved:", processedRecords)
+      console.log("[v0] All batches completed successfully. Total records saved:", processedRecords)
+    } catch (error) {
+      console.log("[v0] Critical error in clearAndSave:", error)
+      throw error
+    }
   }
 
   async getAllRecords(): Promise<GuarantorRecord[]> {
