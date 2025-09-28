@@ -16,15 +16,22 @@ import {
   Phone,
   MessageCircle,
   Download,
+  FileSpreadsheet,
+  Shield,
+  User,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { guarantorDB, type GuarantorRecord } from "@/lib/db"
 
-const PASS_KEY = "appPassword"
+const USER_PASS_KEY = "userPassword"
+const ADMIN_PASS_KEY = "adminPassword"
 const LAST_SYNC_KEY = "lastSync"
+
+type UserRole = "user" | "admin"
 
 export default function GuarantorApp() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [userRole, setUserRole] = useState<UserRole>("user")
   const [loginPassword, setLoginPassword] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [records, setRecords] = useState<GuarantorRecord[]>([])
@@ -32,7 +39,9 @@ export default function GuarantorApp() {
   const [hasSearched, setHasSearched] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
-  const [newPassword, setNewPassword] = useState("")
+  const [showReports, setShowReports] = useState(false)
+  const [newUserPassword, setNewUserPassword] = useState("")
+  const [newAdminPassword, setNewAdminPassword] = useState("")
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [loginError, setLoginError] = useState("")
   const [recordCount, setRecordCount] = useState(0)
@@ -47,8 +56,12 @@ export default function GuarantorApp() {
   const initializeApp = async () => {
     console.log("[v0] Initializing app...")
 
-    if (!localStorage.getItem(PASS_KEY)) {
-      localStorage.setItem(PASS_KEY, "admin123")
+    // Initialize default passwords if they don't exist
+    if (!localStorage.getItem(USER_PASS_KEY)) {
+      localStorage.setItem(USER_PASS_KEY, "user123")
+    }
+    if (!localStorage.getItem(ADMIN_PASS_KEY)) {
+      localStorage.setItem(ADMIN_PASS_KEY, "admin123")
     }
 
     const lastSyncTime = localStorage.getItem(LAST_SYNC_KEY)
@@ -115,12 +128,23 @@ export default function GuarantorApp() {
   }
 
   const handleLogin = () => {
-    const storedPassword = localStorage.getItem(PASS_KEY)
-    if (loginPassword === storedPassword) {
+    const userPassword = localStorage.getItem(USER_PASS_KEY)
+    const adminPassword = localStorage.getItem(ADMIN_PASS_KEY)
+
+    if (loginPassword === adminPassword) {
       setIsLoggedIn(true)
+      setUserRole("admin")
       setLoginError("")
       toast({
-        title: "Login successful",
+        title: "Admin login successful",
+        description: "Welcome to Guarantor Report Viewer - Admin Access",
+      })
+    } else if (loginPassword === userPassword) {
+      setIsLoggedIn(true)
+      setUserRole("user")
+      setLoginError("")
+      toast({
+        title: "User login successful",
         description: "Welcome to Guarantor Report Viewer",
       })
     } else {
@@ -130,17 +154,30 @@ export default function GuarantorApp() {
 
   const handleLogout = () => {
     setIsLoggedIn(false)
+    setUserRole("user")
     setLoginPassword("")
     setShowAdmin(false)
+    setShowReports(false)
   }
 
-  const updatePassword = () => {
-    if (newPassword.trim()) {
-      localStorage.setItem(PASS_KEY, newPassword.trim())
-      setNewPassword("")
+  const updateUserPassword = () => {
+    if (newUserPassword.trim()) {
+      localStorage.setItem(USER_PASS_KEY, newUserPassword.trim())
+      setNewUserPassword("")
       toast({
-        title: "Password updated",
-        description: "Your password has been successfully changed",
+        title: "User password updated",
+        description: "User password has been successfully changed",
+      })
+    }
+  }
+
+  const updateAdminPassword = () => {
+    if (newAdminPassword.trim()) {
+      localStorage.setItem(ADMIN_PASS_KEY, newAdminPassword.trim())
+      setNewAdminPassword("")
+      toast({
+        title: "Admin password updated",
+        description: "Admin password has been successfully changed",
       })
     }
   }
@@ -353,6 +390,10 @@ export default function GuarantorApp() {
             >
               Login
             </Button>
+            <div className="text-center text-xs text-purple-300 space-y-1">
+              <p>User Access: user123</p>
+              <p>Admin Access: admin123</p>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -366,13 +407,33 @@ export default function GuarantorApp() {
       <header className="relative z-10 bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-b border-purple-500/30 p-4 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex-1">
-            <h1 className="text-xl sm:text-2xl font-bold text-white animate-text-glow">Guarantor Reports</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-bold text-white animate-text-glow">Guarantor Reports</h1>
+              <div className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-full border border-cyan-400/30">
+                {userRole === "admin" ? (
+                  <Shield className="h-3 w-3 text-cyan-400" />
+                ) : (
+                  <User className="h-3 w-3 text-blue-400" />
+                )}
+                <span className="text-xs text-white font-medium capitalize">{userRole}</span>
+              </div>
+            </div>
             <p className="text-sm text-purple-200 flex items-center gap-1 mt-1">
               <Database className="h-3 w-3" />
               {recordCount} records stored offline
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {userRole === "admin" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowReports(!showReports)}
+                className="bg-slate-700/50 border-purple-400/30 text-purple-200 hover:bg-purple-700/50 hover:text-white"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -394,6 +455,25 @@ export default function GuarantorApp() {
       </header>
 
       <main className="relative z-10 max-w-6xl mx-auto p-4 space-y-6">
+        {showReports && userRole === "admin" && (
+          <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg text-white animate-text-glow flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5" />
+                Report Generator (Admin Only)
+              </CardTitle>
+              <CardDescription className="text-purple-200">
+                Generate consolidated guarantor reports by matching client data with guarantor information
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="w-full h-[600px] border border-purple-400/30 rounded-lg overflow-hidden">
+                <iframe src="/reports.html" className="w-full h-full" title="Report Generator" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
           <CardContent className="p-4">
             <div className="flex flex-col gap-3">
@@ -464,35 +544,65 @@ export default function GuarantorApp() {
           <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="text-lg text-white animate-text-glow">Admin Panel</CardTitle>
+              <CardDescription className="text-purple-200">
+                {userRole === "admin" ? "Full admin access - manage passwords and data" : "Limited access - view only"}
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  type="password"
-                  placeholder="New password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="flex-1 bg-slate-700/50 border-purple-400/30 text-white placeholder:text-purple-200 focus:border-cyan-400 focus:ring-cyan-400/20"
-                />
-                <Button
-                  onClick={updatePassword}
-                  className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
-                >
-                  Update Password
-                </Button>
-              </div>
-              <div className="pt-2 border-t border-purple-400/30">
-                <Button
-                  onClick={clearAllData}
-                  variant="destructive"
-                  size="sm"
-                  className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Clear All Data
-                </Button>
-                <p className="text-xs text-purple-200 mt-1">This will remove all offline data and require a new sync</p>
-              </div>
+            <CardContent className="space-y-4">
+              {userRole === "admin" && (
+                <>
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-medium text-white">Password Management</h3>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Input
+                        type="password"
+                        placeholder="New user password"
+                        value={newUserPassword}
+                        onChange={(e) => setNewUserPassword(e.target.value)}
+                        className="flex-1 bg-slate-700/50 border-purple-400/30 text-white placeholder:text-purple-200 focus:border-cyan-400 focus:ring-cyan-400/20"
+                      />
+                      <Button
+                        onClick={updateUserPassword}
+                        className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
+                      >
+                        Update User Password
+                      </Button>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Input
+                        type="password"
+                        placeholder="New admin password"
+                        value={newAdminPassword}
+                        onChange={(e) => setNewAdminPassword(e.target.value)}
+                        className="flex-1 bg-slate-700/50 border-purple-400/30 text-white placeholder:text-purple-200 focus:border-cyan-400 focus:ring-cyan-400/20"
+                      />
+                      <Button
+                        onClick={updateAdminPassword}
+                        className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
+                      >
+                        Update Admin Password
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-purple-400/30">
+                    <Button
+                      onClick={clearAllData}
+                      variant="destructive"
+                      size="sm"
+                      className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Clear All Data
+                    </Button>
+                    <p className="text-xs text-purple-200 mt-1">
+                      This will remove all offline data and require a new sync
+                    </p>
+                  </div>
+                </>
+              )}
+              {userRole === "user" && (
+                <p className="text-sm text-purple-200">Contact administrator to change passwords or manage data.</p>
+              )}
             </CardContent>
           </Card>
         )}
