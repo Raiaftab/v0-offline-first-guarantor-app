@@ -4,7 +4,19 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Search, Send as Sync, Settings, LogOut, Loader2, Database, Trash2, Phone, MessageCircle } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
+import {
+  Search,
+  Send as Sync,
+  Settings,
+  LogOut,
+  Loader2,
+  Database,
+  Trash2,
+  Phone,
+  MessageCircle,
+  Download,
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { guarantorDB, type GuarantorRecord } from "@/lib/db"
 
@@ -24,27 +36,24 @@ export default function GuarantorApp() {
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [loginError, setLoginError] = useState("")
   const [recordCount, setRecordCount] = useState(0)
+  const [syncProgress, setSyncProgress] = useState(0)
+  const [syncStatus, setSyncStatus] = useState("")
   const { toast } = useToast()
 
-  // Initialize app
   useEffect(() => {
     initializeApp()
   }, [])
 
-  // Initialize IndexedDB and check login status
   const initializeApp = async () => {
     console.log("[v0] Initializing app...")
 
-    // Set default password if not exists
     if (!localStorage.getItem(PASS_KEY)) {
       localStorage.setItem(PASS_KEY, "admin123")
     }
 
-    // Get last sync time
     const lastSyncTime = localStorage.getItem(LAST_SYNC_KEY)
     setLastSync(lastSyncTime)
 
-    // Load offline data and get count
     try {
       console.log("[v0] Loading offline data...")
       const offlineRecords = await guarantorDB.getAllRecords()
@@ -66,9 +75,7 @@ export default function GuarantorApp() {
 
   const formatPhoneNumber = (phone: string) => {
     if (!phone || phone === "-") return null
-    // Remove any non-digit characters and ensure it starts with country code
     const cleaned = phone.replace(/\D/g, "")
-    // If it doesn't start with country code, assume Pakistan (+92)
     if (cleaned.length === 10 || cleaned.length === 11) {
       return cleaned.startsWith("0") ? `92${cleaned.slice(1)}` : `92${cleaned}`
     }
@@ -107,7 +114,6 @@ export default function GuarantorApp() {
     )
   }
 
-  // Authentication
   const handleLogin = () => {
     const storedPassword = localStorage.getItem(PASS_KEY)
     if (loginPassword === storedPassword) {
@@ -142,146 +148,109 @@ export default function GuarantorApp() {
   const syncData = async () => {
     console.log("[v0] Starting data sync...")
     setIsLoading(true)
+    setSyncProgress(0)
+    setSyncStatus("Connecting to server...")
+
     try {
       const API_URL =
         "https://script.google.com/macros/s/AKfycbz8h-lfEIEK53trQ2R42p_UfaY9ALf0wSqIqGGL17SG7UCzrdk0Tajr39itkN0l2Amf/exec"
 
       console.log("[v0] Fetching from Google Script URL:", API_URL)
+      setSyncStatus("Fetching data from Google Sheets...")
+      setSyncProgress(10)
+
+      const response = await fetch(API_URL, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      })
+
+      console.log("[v0] Response status:", response.status)
+      setSyncProgress(25)
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      setSyncStatus("Processing received data...")
+      setSyncProgress(40)
+
+      const data = await response.json()
+      console.log("[v0] Received data length:", Array.isArray(data) ? data.length : "Not an array")
+
+      let actualData: GuarantorRecord[]
+      if (!Array.isArray(data)) {
+        console.log("[v0] Data is not an array, trying to extract array from response")
+        if (data && data.data && Array.isArray(data.data)) {
+          console.log("[v0] Found data array in response.data")
+          actualData = data.data
+        } else {
+          throw new Error("Invalid data format received - not an array")
+        }
+      } else {
+        actualData = data
+      }
+
+      setSyncStatus(`Saving ${actualData.length} records to database...`)
+      setSyncProgress(50)
 
       try {
-        const response = await fetch(API_URL, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-          },
+        await guarantorDB.clearAndSave(actualData, (progress) => {
+          const dbProgress = 50 + progress * 0.4 // 50% to 90%
+          setSyncProgress(Math.round(dbProgress))
+          setSyncStatus(`Saving records... ${progress}%`)
         })
 
-        console.log("[v0] Response status:", response.status)
-        console.log("[v0] Response headers:", Object.fromEntries(response.headers.entries()))
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-
-        const data = await response.json()
-        console.log("[v0] Received data:", data)
-        console.log("[v0] Data type:", typeof data)
-        console.log("[v0] Data length:", Array.isArray(data) ? data.length : "Not an array")
-
-        // Validate data structure
-        if (!Array.isArray(data)) {
-          console.log("[v0] Data is not an array, trying to extract array from response")
-          // Sometimes the response might be wrapped in an object
-          if (data && data.data && Array.isArray(data.data)) {
-            console.log("[v0] Found data array in response.data")
-            const actualData = data.data
-            await guarantorDB.clearAndSave(actualData)
-            setRecords(actualData)
-            if (!hasSearched) {
-              setFilteredRecords([])
-            }
-            setRecordCount(actualData.length)
-          } else {
-            throw new Error("Invalid data format received - not an array")
-          }
-        } else {
-          console.log("[v0] Saving", data.length, "records to IndexedDB")
-          await guarantorDB.clearAndSave(data)
-          const count = await guarantorDB.getRecordCount()
-
-          setRecords(data)
-          if (!hasSearched) {
-            setFilteredRecords([])
-          }
-          setRecordCount(count)
-        }
-
-        const syncTime = new Date().toLocaleString()
-        localStorage.setItem(LAST_SYNC_KEY, syncTime)
-        setLastSync(syncTime)
-
-        toast({
-          title: "Data synced successfully",
-          description: `Successfully stored ${Array.isArray(data) ? data.length : data.data?.length || 0} records for offline use`,
-        })
-      } catch (fetchError) {
-        console.log("[v0] Fetch error:", fetchError)
-        console.log("[v0] Falling back to demo data due to fetch error")
-
-        const demoData = [
-          {
-            "Client ID": "103002617",
-            Name: "John Doe",
-            "CO Name": "ABC Corp",
-            Branch: "Main",
-            "Cell No": "0300-1234567",
-            "Guarantor Cell": "0301-7654321",
-          },
-          {
-            "Client ID": "103002618",
-            Name: "Jane Smith",
-            "CO Name": "XYZ Ltd",
-            Branch: "North",
-            "Cell No": "0321-9876543",
-            "Guarantor Cell": "0333-1111111",
-          },
-          {
-            "Client ID": "103002619",
-            Name: "Bob Johnson",
-            "CO Name": "DEF Inc",
-            Branch: "South",
-            "Cell No": "0345-5555555",
-            "Guarantor Cell": "0300-9999999",
-          },
-          {
-            "Client ID": "103002620",
-            Name: "Alice Brown",
-            "CO Name": "GHI Co",
-            Branch: "East",
-            "Cell No": "0312-7777777",
-            "Guarantor Cell": "0345-3333333",
-          },
-          {
-            "Client ID": "103002621",
-            Name: "Charlie Wilson",
-            "CO Name": "JKL Corp",
-            Branch: "West",
-            "Cell No": "0333-4444444",
-            "Guarantor Cell": "0321-8888888",
-          },
-        ]
-
-        console.log("[v0] Saving demo data to IndexedDB...")
-        await guarantorDB.clearAndSave(demoData)
-
-        console.log("[v0] Getting updated records...")
-        const updatedRecords = await guarantorDB.getAllRecords()
-        const count = await guarantorDB.getRecordCount()
-
-        console.log("[v0] Updated records count:", updatedRecords.length)
-        setRecords(updatedRecords)
-        if (!hasSearched) {
-          setFilteredRecords([])
-        }
-        setRecordCount(count)
-
-        const syncTime = new Date().toLocaleString()
-        localStorage.setItem(LAST_SYNC_KEY, syncTime)
-        setLastSync(syncTime)
-
-        toast({
-          title: "Using demo data",
-          description: `Google Script failed to load. Using ${updatedRecords.length} demo records instead.`,
-          variant: "destructive",
-        })
+        console.log("[v0] Database save completed successfully")
+      } catch (dbError) {
+        console.log("[v0] Database save error:", dbError)
+        throw new Error(`Database save failed: ${dbError.message || dbError}`)
       }
-    } catch (error) {
-      console.log("[v0] Sync error:", error)
+
+      setSyncStatus("Finalizing sync...")
+      setSyncProgress(95)
+
+      const count = await guarantorDB.getRecordCount()
+      console.log("[v0] Final record count:", count)
+
+      setRecords(actualData)
+      if (!hasSearched) {
+        setFilteredRecords([])
+      }
+      setRecordCount(count)
+
+      const syncTime = new Date().toLocaleString()
+      localStorage.setItem(LAST_SYNC_KEY, syncTime)
+      setLastSync(syncTime)
+
+      setSyncProgress(100)
+      setSyncStatus("Sync completed successfully!")
+
+      toast({
+        title: "Data synced successfully",
+        description: `Successfully stored ${actualData.length} records for offline use`,
+      })
+
+      setTimeout(() => {
+        setSyncProgress(0)
+        setSyncStatus("")
+      }, 2000)
+    } catch (fetchError) {
+      console.log("[v0] Sync error:", fetchError)
+      setSyncStatus("Sync failed!")
+      setSyncProgress(0)
+
       toast({
         title: "Sync failed",
-        description: "Error fetching data. Using offline data.",
+        description: `Error: ${fetchError.message || fetchError}. Using offline data.`,
         variant: "destructive",
       })
+
+      setTimeout(() => {
+        setSyncProgress(0)
+        setSyncStatus("")
+      }, 2000)
     } finally {
       setIsLoading(false)
     }
@@ -350,10 +319,8 @@ export default function GuarantorApp() {
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
-        {/* Animated background overlay */}
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 animate-gradient-x"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10"></div>
 
-        {/* Decorative elements */}
         <div className="absolute top-10 right-10 w-4 h-4 bg-cyan-400 rounded-full animate-ping"></div>
         <div className="absolute bottom-10 left-10 w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
         <div className="absolute top-1/3 left-1/4 w-1 h-1 bg-pink-400 rounded-full animate-pulse"></div>
@@ -394,10 +361,8 @@ export default function GuarantorApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative">
-      {/* Animated background overlay */}
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 via-purple-600/5 to-pink-600/5 animate-gradient-x"></div>
+      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 via-purple-600/5 to-pink-600/5"></div>
 
-      {/* Header */}
       <header className="relative z-10 bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-b border-purple-500/30 p-4 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex-1">
@@ -429,7 +394,6 @@ export default function GuarantorApp() {
       </header>
 
       <main className="relative z-10 max-w-6xl mx-auto p-4 space-y-6">
-        {/* Search and Sync Controls */}
         <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
           <CardContent className="p-4">
             <div className="flex flex-col gap-3">
@@ -461,20 +425,41 @@ export default function GuarantorApp() {
                   )}
                 </div>
               </div>
-              <Button
-                onClick={syncData}
-                disabled={isLoading}
-                className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white"
-              >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sync className="h-4 w-4 mr-2" />}
-                Sync Data
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={syncData}
+                  disabled={isLoading}
+                  className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white"
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sync className="h-4 w-4 mr-2" />}
+                  Sync Data
+                </Button>
+
+                {(isLoading || syncProgress > 0) && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Download className="h-4 w-4 text-cyan-400 animate-bounce" />
+                      <span className="text-sm text-purple-200 animate-pulse">{syncStatus}</span>
+                    </div>
+                    <div className="relative">
+                      <Progress value={syncProgress} className="h-2 bg-slate-700/50" />
+                      <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 via-blue-400/20 to-purple-400/20 rounded-full animate-pulse"></div>
+                      <div
+                        className="absolute top-0 left-0 h-full bg-gradient-to-r from-cyan-400 to-blue-400 rounded-full transition-all duration-300 animate-shine"
+                        style={{ width: `${syncProgress}%` }}
+                      ></div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-cyan-400 font-mono animate-text-glow">{syncProgress}%</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             {lastSync && <p className="text-sm text-purple-200 mt-2">Last sync: {lastSync}</p>}
           </CardContent>
         </Card>
 
-        {/* Admin Panel */}
         {showAdmin && (
           <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
             <CardHeader>
@@ -512,8 +497,7 @@ export default function GuarantorApp() {
           </Card>
         )}
 
-        {/* Results */}
-        <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
+        <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/20 shadow-xl backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="text-lg text-white animate-text-glow">
               {!hasSearched ? "Search Results" : `Records (${filteredRecords.length})`}
@@ -533,12 +517,9 @@ export default function GuarantorApp() {
                     key={index}
                     className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 sm:p-6 shadow-2xl border border-purple-500/20 animate-pulse-glow"
                   >
-                    {/* Animated background overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 animate-gradient-x"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10"></div>
 
-                    {/* Content */}
                     <div className="relative z-10 space-y-3 sm:space-y-4">
-                      {/* Client ID - Featured */}
                       <div className="text-center mb-4 sm:mb-6">
                         <div className="inline-block px-3 py-2 sm:px-4 sm:py-2 bg-gradient-to-r from-cyan-400 to-blue-400 rounded-lg shadow-lg">
                           <span className="text-xs sm:text-sm font-medium text-slate-900">Client ID</span>
@@ -548,9 +529,7 @@ export default function GuarantorApp() {
                         </div>
                       </div>
 
-                      {/* Data Fields - Mobile optimized grid */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
-                        {/* Name */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">Name:</span>
                           <span className="text-white font-semibold animate-text-glow text-sm sm:text-base break-words">
@@ -558,7 +537,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Spouse */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">Spouse:</span>
                           <span className="text-white font-semibold animate-text-glow text-sm sm:text-base break-words">
@@ -566,7 +544,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Product */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">Product:</span>
                           <span className="text-white font-semibold animate-text-glow text-sm sm:text-base">
@@ -574,7 +551,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* CO Name */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">CO Name:</span>
                           <span className="text-white font-semibold animate-text-glow text-sm sm:text-base break-words">
@@ -582,7 +558,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Cell No */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">Cell No:</span>
                           <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
@@ -590,7 +565,6 @@ export default function GuarantorApp() {
                           </div>
                         </div>
 
-                        {/* Area */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">Area:</span>
                           <span className="text-white font-semibold animate-text-glow text-sm sm:text-base break-words">
@@ -598,7 +572,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Maturity Date */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">
                             Maturity Date:
@@ -608,7 +581,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Branch */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">Branch:</span>
                           <span className="text-white font-semibold animate-text-glow text-sm sm:text-base">
@@ -616,7 +588,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Last Amount Paid */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">
                             Last Amount Paid:
@@ -626,7 +597,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Loan Amount */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">
                             Loan Amount:
@@ -636,7 +606,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Loan Cycle */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">
                             Loan Cycle:
@@ -646,7 +615,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Guarantor Name */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">
                             Guarantor Name:
@@ -656,7 +624,6 @@ export default function GuarantorApp() {
                           </span>
                         </div>
 
-                        {/* Guarantor Cell */}
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">
                             Guarantor Cell:
@@ -666,7 +633,6 @@ export default function GuarantorApp() {
                           </div>
                         </div>
 
-                        {/* Address - Full width on mobile and desktop */}
                         <div className="sm:col-span-2 flex flex-col sm:flex-row sm:justify-between sm:items-start py-2 border-b border-purple-400/20">
                           <span className="text-purple-300 font-medium text-xs sm:text-sm mb-1 sm:mb-0">Address:</span>
                           <span className="text-white font-semibold animate-text-glow text-sm sm:text-base break-words sm:text-right sm:max-w-md">
@@ -676,7 +642,6 @@ export default function GuarantorApp() {
                       </div>
                     </div>
 
-                    {/* Decorative elements */}
                     <div className="absolute top-2 right-2 sm:top-4 sm:right-4 w-2 h-2 bg-cyan-400 rounded-full animate-ping"></div>
                     <div className="absolute bottom-2 left-2 sm:bottom-4 sm:left-4 w-1 h-1 bg-purple-400 rounded-full animate-pulse"></div>
                   </div>

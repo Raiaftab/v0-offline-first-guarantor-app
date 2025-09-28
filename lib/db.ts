@@ -9,7 +9,7 @@ export interface GuarantorRecord {
 
 const DB_NAME = "GuarantorDB"
 const STORE_NAME = "records"
-const DB_VERSION = 2 // Increment version to trigger schema update
+const DB_VERSION = 3 // Increment version for schema update
 
 export class GuarantorDB {
   private static instance: GuarantorDB
@@ -69,43 +69,117 @@ export class GuarantorDB {
     }
   }
 
-  async clearAndSave(data: GuarantorRecord[]): Promise<void> {
+  async clearAndSave(data: GuarantorRecord[], onProgress?: (progress: number) => void): Promise<void> {
+    console.log("[v0] Starting clearAndSave with", data.length, "records")
     const db = await this.openDB()
 
-    return new Promise((resolve, reject) => {
+    // First clear existing data
+    console.log("[v0] Clearing existing data...")
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite")
       const store = tx.objectStore(STORE_NAME)
 
-      // Clear existing data
       const clearRequest = store.clear()
-
       clearRequest.onsuccess = () => {
-        const normalizedData = data.map((record) => this.normalizeRecord(record))
+        console.log("[v0] Data cleared successfully")
+        resolve()
+      }
+      clearRequest.onerror = (e) => {
+        console.log("[v0] Error clearing data:", e)
+        reject(e)
+      }
+    })
 
-        // Add new data in batches for better performance
-        const batchSize = 100
-        let index = 0
+    const batchSize = 25 // Even smaller batches for better reliability
+    const totalRecords = data.length
+    let processedRecords = 0
 
-        const addBatch = () => {
-          const batch = normalizedData.slice(index, index + batchSize)
-          if (batch.length === 0) {
-            resolve()
-            return
+    console.log("[v0] Starting to save", totalRecords, "records in batches of", batchSize)
+
+    for (let i = 0; i < totalRecords; i += batchSize) {
+      const batch = data.slice(i, i + batchSize)
+      const normalizedBatch = batch.map((record) => this.normalizeRecord(record))
+
+      console.log(
+        "[v0] Processing batch",
+        Math.floor(i / batchSize) + 1,
+        "of",
+        Math.ceil(totalRecords / batchSize),
+        "with",
+        normalizedBatch.length,
+        "records",
+      )
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, "readwrite")
+          const store = tx.objectStore(STORE_NAME)
+
+          let completed = 0
+          let hasError = false
+          const batchLength = normalizedBatch.length
+
+          // Handle transaction errors
+          tx.onerror = (e) => {
+            console.log("[v0] Transaction error in batch:", e)
+            if (!hasError) {
+              hasError = true
+              reject(e)
+            }
           }
 
-          batch.forEach((item) => store.add(item))
-          index += batchSize
+          tx.onabort = (e) => {
+            console.log("[v0] Transaction aborted in batch:", e)
+            if (!hasError) {
+              hasError = true
+              reject(new Error("Transaction aborted"))
+            }
+          }
 
-          // Use setTimeout to prevent blocking the UI
-          setTimeout(addBatch, 0)
+          // Add all records in the batch
+          normalizedBatch.forEach((item, index) => {
+            if (hasError) return
+
+            const request = store.add(item)
+
+            request.onsuccess = () => {
+              completed++
+              console.log("[v0] Record", index + 1, "of", batchLength, "saved in current batch")
+
+              if (completed === batchLength) {
+                processedRecords += batchLength
+                const progress = Math.round((processedRecords / totalRecords) * 100)
+                console.log(
+                  "[v0] Batch completed. Progress:",
+                  progress + "%",
+                  "(" + processedRecords + "/" + totalRecords + ")",
+                )
+                onProgress?.(progress)
+                resolve()
+              }
+            }
+
+            request.onerror = (e) => {
+              console.log("[v0] Error saving record", index + 1, "in batch:", e)
+              if (!hasError) {
+                hasError = true
+                reject(e)
+              }
+            }
+          })
+        })
+
+        // Small delay between batches to prevent overwhelming the browser
+        if (i + batchSize < totalRecords) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
         }
-
-        addBatch()
+      } catch (error) {
+        console.log("[v0] Error in batch processing:", error)
+        throw error
       }
+    }
 
-      clearRequest.onerror = (e) => reject(e)
-      tx.onerror = (e) => reject(e)
-    })
+    console.log("[v0] All batches completed successfully. Total records saved:", processedRecords)
   }
 
   async getAllRecords(): Promise<GuarantorRecord[]> {
