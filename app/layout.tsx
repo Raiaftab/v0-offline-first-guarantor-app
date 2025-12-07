@@ -30,14 +30,13 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <link rel="manifest" href="/manifest.json" />
-
-        <link rel="serviceworker" href="/sw.js" />
+        <link rel="service-worker" href="/sw.js" />
 
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Guarantor App" />
-        <link rel="apple-touch-icon" href="/placeholder.svg?height=180&width=180" />
+        <link rel="apple-touch-icon" href="/icon-192x192.jpg" />
         <meta name="theme-color" content="#7c3aed" />
       </head>
       <body className="font-sans">
