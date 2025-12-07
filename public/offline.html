@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - Guarantor App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .offline-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            text-align: center;
+        }
+        
+        .offline-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        
+        .offline-features {
+            text-align: left;
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .offline-features h3 {
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
+        .offline-features ul {
+            list-style: none;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .offline-features li {
+            padding: 5px 0;
+        }
+        
+        .offline-features li:before {
+            content: "✓ ";
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .offline-container {
+                padding: 25px;
+            }
+            
+            h1 {
+                font-size: 22px;
+            }
+            
+            p {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">📱</div>
+        <h1>You're Offline</h1>
+        <p>It looks like you've lost your internet connection. But don't worry!</p>
+        
+        <div class="offline-features">
+            <h3>Your data is safe and available:</h3>
+            <ul>
+                <li>All synced records are stored locally</li>
+                <li>Search your cached data</li>
+                <li>View guarantor information</li>
+                <li>Use phone/WhatsApp links</li>
+            </ul>
+        </div>
+        
+        <p style="font-size: 14px; color: #999; margin-top: 20px;">
+            Waiting for connection to be restored...
+        </p>
+        
+        <button onclick="location.reload()">Try Again</button>
+    </div>
+    
+    <script>
+        // Monitor connection status
+        window.addEventListener('online', () => {
+            console.log("[v0] Connection restored");
+            location.reload();
+        });
+        
+        window.addEventListener('offline', () => {
+            console.log("[v0] Connection lost");
+        });
+    </script>
+</body>
+</html>
