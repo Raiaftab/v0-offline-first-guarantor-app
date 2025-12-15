@@ -392,8 +392,8 @@ export default function GuarantorApp() {
               Login
             </Button>
             <div className="text-center text-xs text-purple-300 space-y-1">
-              <p>User Access: user123</p>
-              <p>Admin Access: admin123</p>
+              <p>Enter Correct Password</p>
+            
             </div>
           </CardContent>
         </Card>
