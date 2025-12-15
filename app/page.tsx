@@ -59,10 +59,10 @@ export default function GuarantorApp() {
 
     // Initialize default passwords if they don't exist
     if (!localStorage.getItem(USER_PASS_KEY)) {
-      localStorage.setItem(USER_PASS_KEY, "user123")
+      localStorage.setItem(USER_PASS_KEY, "1122")
     }
     if (!localStorage.getItem(ADMIN_PASS_KEY)) {
-      localStorage.setItem(ADMIN_PASS_KEY, "admin123")
+      localStorage.setItem(ADMIN_PASS_KEY, "rizwan963")
     }
 
     const lastSyncTime = localStorage.getItem(LAST_SYNC_KEY)
