@@ -12,7 +12,6 @@ import {
   LogOut,
   Loader2,
   Database,
-  Trash2,
   Phone,
   MessageCircle,
   Download,
@@ -22,17 +21,18 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { guarantorDB, type GuarantorRecord } from "@/lib/db"
+import { authDB, getSession, clearSession, saveSession, type SessionData } from "@/lib/auth-db"
 import GuarantorInfoGenerator from "@/components/guarantor-info-generator"
+import { UserManagement } from "@/components/user-management"
 
-const USER_PASS_KEY = "userPassword"
-const ADMIN_PASS_KEY = "adminPassword"
 const LAST_SYNC_KEY = "lastSync"
 
 type UserRole = "user" | "admin"
 
 export default function GuarantorApp() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [userRole, setUserRole] = useState<UserRole>("user")
+  const [session, setSession] = useState<SessionData | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [loginUsername, setLoginUsername] = useState("")
   const [loginPassword, setLoginPassword] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [records, setRecords] = useState<GuarantorRecord[]>([])
@@ -41,8 +41,6 @@ export default function GuarantorApp() {
   const [isLoading, setIsLoading] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [showReports, setShowReports] = useState(false)
-  const [newUserPassword, setNewUserPassword] = useState("")
-  const [newAdminPassword, setNewAdminPassword] = useState("")
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [loginError, setLoginError] = useState("")
   const [recordCount, setRecordCount] = useState(0)
@@ -57,12 +55,10 @@ export default function GuarantorApp() {
   const initializeApp = async () => {
     console.log("[v0] Initializing app...")
 
-    // Initialize default passwords if they don't exist
-    if (!localStorage.getItem(USER_PASS_KEY)) {
-      localStorage.setItem(USER_PASS_KEY, "1122")
-    }
-    if (!localStorage.getItem(ADMIN_PASS_KEY)) {
-      localStorage.setItem(ADMIN_PASS_KEY, "rizwan963")
+    const existingSession = getSession()
+    if (existingSession) {
+      console.log("[v0] Restoring session for user:", existingSession.username)
+      setSession(existingSession)
     }
 
     const lastSyncTime = localStorage.getItem(LAST_SYNC_KEY)
@@ -85,6 +81,8 @@ export default function GuarantorApp() {
         variant: "destructive",
       })
     }
+
+    setIsInitialized(true)
   }
 
   const formatPhoneNumber = (phone: string) => {
@@ -128,59 +126,59 @@ export default function GuarantorApp() {
     )
   }
 
-  const handleLogin = () => {
-    const userPassword = localStorage.getItem(USER_PASS_KEY)
-    const adminPassword = localStorage.getItem(ADMIN_PASS_KEY)
+  const handleLogin = async () => {
+    setLoginError("")
 
-    if (loginPassword === adminPassword) {
-      setIsLoggedIn(true)
-      setUserRole("admin")
+    if (!loginUsername.trim() || !loginPassword.trim()) {
+      setLoginError("Username and password are required")
+      return
+    }
+
+    try {
+      const user = await authDB.getUserByUsername(loginUsername)
+
+      if (!user) {
+        setLoginError("Invalid username or password")
+        return
+      }
+
+      // In production, this should compare hashed passwords
+      if (user.password !== loginPassword) {
+        setLoginError("Invalid username or password")
+        return
+      }
+
+      // Create session
+      const newSession: SessionData = {
+        userId: user.id || 0,
+        username: user.username,
+        role: user.role,
+        loginTime: Date.now(),
+      }
+
+      saveSession(newSession)
+      setSession(newSession)
+      setLoginUsername("")
+      setLoginPassword("")
       setLoginError("")
+
       toast({
-        title: "Admin login successful",
-        description: "Welcome to Guarantor Report Viewer - Admin Access",
+        title: "Login successful",
+        description: `Welcome, ${user.username}!`,
       })
-    } else if (loginPassword === userPassword) {
-      setIsLoggedIn(true)
-      setUserRole("user")
-      setLoginError("")
-      toast({
-        title: "User login successful",
-        description: "Welcome to Guarantor Report Viewer",
-      })
-    } else {
-      setLoginError("Wrong password!")
+    } catch (error) {
+      console.log("[v0] Login error:", error)
+      setLoginError("An error occurred during login")
     }
   }
 
   const handleLogout = () => {
-    setIsLoggedIn(false)
-    setUserRole("user")
+    clearSession()
+    setSession(null)
+    setLoginUsername("")
     setLoginPassword("")
     setShowAdmin(false)
     setShowReports(false)
-  }
-
-  const updateUserPassword = () => {
-    if (newUserPassword.trim()) {
-      localStorage.setItem(USER_PASS_KEY, newUserPassword.trim())
-      setNewUserPassword("")
-      toast({
-        title: "User password updated",
-        description: "User password has been successfully changed",
-      })
-    }
-  }
-
-  const updateAdminPassword = () => {
-    if (newAdminPassword.trim()) {
-      localStorage.setItem(ADMIN_PASS_KEY, newAdminPassword.trim())
-      setNewAdminPassword("")
-      toast({
-        title: "Admin password updated",
-        description: "Admin password has been successfully changed",
-      })
-    }
   }
 
   const syncData = async () => {
@@ -306,14 +304,21 @@ export default function GuarantorApp() {
 
     try {
       console.log("[v0] Searching records...")
-      const searchResults = await guarantorDB.searchRecords(searchQuery)
+      let searchResults
+      if (session?.username) {
+        console.log("[v0] Filtering results for user:", session.username)
+        searchResults = await guarantorDB.searchRecordsByUser(searchQuery, session.username)
+      } else {
+        searchResults = await guarantorDB.searchRecords(searchQuery)
+      }
+
       console.log("[v0] Search results:", searchResults.length, "records found")
       setFilteredRecords(searchResults)
       setHasSearched(true)
 
       toast({
         title: "Search completed",
-        description: `Found ${searchResults.length} matching records`,
+        description: `Found ${searchResults.length} matching records for your CO Name`,
       })
     } catch (error) {
       console.log("[v0] Search error:", error)
@@ -354,7 +359,7 @@ export default function GuarantorApp() {
     }
   }
 
-  if (!isLoggedIn) {
+  if (!isInitialized || !session) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10"></div>
@@ -369,17 +374,30 @@ export default function GuarantorApp() {
               <Database className="h-8 w-8 text-slate-900" />
             </div>
             <CardTitle className="text-2xl font-bold text-white animate-text-glow">Guarantor Report Viewer</CardTitle>
-            <CardDescription className="text-purple-200">Enter your password to access the app</CardDescription>
+            <CardDescription className="text-purple-200">Enter your credentials to access the app</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input
-              type="password"
-              placeholder="Enter password"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && handleLogin()}
-              className="bg-slate-700/50 border-purple-400/30 text-white placeholder:text-purple-200 focus:border-cyan-400 focus:ring-cyan-400/20"
-            />
+            <div>
+              <label className="text-sm font-medium text-white">Username</label>
+              <Input
+                type="text"
+                placeholder="Enter username"
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                className="mt-1 bg-slate-700/50 border-purple-400/30 text-white placeholder:text-purple-200 focus:border-cyan-400 focus:ring-cyan-400/20"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-white">Password</label>
+              <Input
+                type="password"
+                placeholder="Enter password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+                className="mt-1 bg-slate-700/50 border-purple-400/30 text-white placeholder:text-purple-200 focus:border-cyan-400 focus:ring-cyan-400/20"
+              />
+            </div>
             {loginError && (
               <p className="text-sm text-red-400 animate-pulse bg-red-900/20 p-2 rounded border border-red-500/30">
                 {loginError}
@@ -391,10 +409,6 @@ export default function GuarantorApp() {
             >
               Login
             </Button>
-            <div className="text-center text-xs text-purple-300 space-y-1">
-              <p>Enter Correct Password</p>
-            
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -411,12 +425,14 @@ export default function GuarantorApp() {
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-white animate-text-glow">Guarantor Reports</h1>
               <div className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-full border border-cyan-400/30">
-                {userRole === "admin" ? (
+                {session.role === "admin" ? (
                   <Shield className="h-3 w-3 text-cyan-400" />
                 ) : (
                   <User className="h-3 w-3 text-blue-400" />
                 )}
-                <span className="text-xs text-white font-medium capitalize">{userRole}</span>
+                <span className="text-xs text-white font-medium capitalize">
+                  {session.username} ({session.role})
+                </span>
               </div>
             </div>
             <p className="text-sm text-purple-200 flex items-center gap-1 mt-1">
@@ -425,7 +441,7 @@ export default function GuarantorApp() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {userRole === "admin" && (
+            {session.role === "admin" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -456,7 +472,7 @@ export default function GuarantorApp() {
       </header>
 
       <main className="relative z-10 max-w-6xl mx-auto p-4 space-y-6">
-        {showReports && userRole === "admin" && (
+        {showReports && session.role === "admin" && (
           <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="text-lg text-white animate-text-glow flex items-center gap-2">
@@ -473,7 +489,36 @@ export default function GuarantorApp() {
           </Card>
         )}
 
-        <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
+        {showAdmin && session.role === "admin" && (
+          <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg text-white animate-text-glow flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                User Management
+              </CardTitle>
+              <CardDescription className="text-purple-200">
+                Manage system users, usernames, passwords, and roles
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <UserManagement />
+            </CardContent>
+          </Card>
+        )}
+
+        {showAdmin && session.role === "user" && (
+          <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/20 shadow-xl backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg text-white animate-text-glow">Settings</CardTitle>
+              <CardDescription className="text-purple-200">Limited settings for regular users</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-purple-200">Contact administrator to manage users or change your password.</p>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/20 shadow-xl backdrop-blur-sm">
           <CardContent className="p-4">
             <div className="flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row gap-2">
@@ -488,7 +533,7 @@ export default function GuarantorApp() {
                   <Button
                     onClick={handleSearch}
                     size="sm"
-                    className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
+                    className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white"
                   >
                     <Search className="h-4 w-4" />
                   </Button>
@@ -533,78 +578,16 @@ export default function GuarantorApp() {
                     </div>
                   </div>
                 )}
+
+                {lastSync && !isLoading && (
+                  <div className="text-xs text-purple-300 bg-slate-700/30 p-2 rounded border border-purple-400/20">
+                    Last synced: {lastSync}
+                  </div>
+                )}
               </div>
             </div>
-            {lastSync && <p className="text-sm text-purple-200 mt-2">Last sync: {lastSync}</p>}
           </CardContent>
         </Card>
-
-        {showAdmin && (
-          <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/30 shadow-xl backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle className="text-lg text-white animate-text-glow">Admin Panel</CardTitle>
-              <CardDescription className="text-purple-200">
-                {userRole === "admin" ? "Full admin access - manage passwords and data" : "Limited access - view only"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {userRole === "admin" && (
-                <>
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-medium text-white">Password Management</h3>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <Input
-                        type="password"
-                        placeholder="New user password"
-                        value={newUserPassword}
-                        onChange={(e) => setNewUserPassword(e.target.value)}
-                        className="flex-1 bg-slate-700/50 border-purple-400/30 text-white placeholder:text-purple-200 focus:border-cyan-400 focus:ring-cyan-400/20"
-                      />
-                      <Button
-                        onClick={updateUserPassword}
-                        className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white"
-                      >
-                        Update User Password
-                      </Button>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <Input
-                        type="password"
-                        placeholder="New admin password"
-                        value={newAdminPassword}
-                        onChange={(e) => setNewAdminPassword(e.target.value)}
-                        className="flex-1 bg-slate-700/50 border-purple-400/30 text-white placeholder:text-purple-200 focus:border-cyan-400 focus:ring-cyan-400/20"
-                      />
-                      <Button
-                        onClick={updateAdminPassword}
-                        className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
-                      >
-                        Update Admin Password
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-purple-400/30">
-                    <Button
-                      onClick={clearAllData}
-                      variant="destructive"
-                      size="sm"
-                      className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Clear All Data
-                    </Button>
-                    <p className="text-xs text-purple-200 mt-1">
-                      This will remove all offline data and require a new sync
-                    </p>
-                  </div>
-                </>
-              )}
-              {userRole === "user" && (
-                <p className="text-sm text-purple-200">Contact administrator to change passwords or manage data.</p>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         <Card className="bg-gradient-to-r from-slate-800/90 via-purple-800/90 to-slate-800/90 border-purple-500/20 shadow-xl backdrop-blur-sm">
           <CardHeader>

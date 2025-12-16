@@ -7,9 +7,18 @@ export interface GuarantorRecord {
   [key: string]: any
 }
 
+export interface User {
+  id?: number
+  username: string
+  password: string
+  createdAt?: string
+  role: "user" | "admin"
+}
+
 const DB_NAME = "GuarantorDB"
 const STORE_NAME = "records"
-const DB_VERSION = 4 // Increment version to fix schema issues
+const USERS_STORE_NAME = "users"
+const DB_VERSION = 5 // Incremented to add users store
 
 export class GuarantorDB {
   private static instance: GuarantorDB
@@ -70,11 +79,47 @@ export class GuarantorDB {
             }
           }
         }
+
+        if (!db.objectStoreNames.contains(USERS_STORE_NAME)) {
+          console.log("[v0] Creating users store")
+          const usersStore = db.createObjectStore(USERS_STORE_NAME, {
+            keyPath: "id",
+            autoIncrement: true,
+          })
+          usersStore.createIndex("username", "username", { unique: true })
+
+          // Create default admin user
+          usersStore.add({
+            username: "admin",
+            password: "admin123",
+            role: "admin",
+            createdAt: new Date().toISOString(),
+          })
+          console.log("[v0] Default admin user created")
+        }
       }
 
-      request.onsuccess = (e) => {
+      request.onsuccess = async (e) => {
         this.db = (e.target as IDBOpenDBRequest).result
         console.log("[v0] Database opened successfully")
+
+        try {
+          const adminExists = await this.getUserByUsername("admin")
+          if (!adminExists) {
+            console.log("[v0] Admin user not found, creating default admin")
+            await this.addUser({
+              username: "admin",
+              password: "admin123",
+              role: "admin",
+              createdAt: new Date().toISOString(),
+            })
+          } else {
+            console.log("[v0] Admin user already exists")
+          }
+        } catch (err) {
+          console.log("[v0] Error checking/creating admin user:", err)
+        }
+
         resolve(this.db)
       }
 
@@ -308,6 +353,46 @@ export class GuarantorDB {
     })
   }
 
+  async searchRecordsByUser(query: string, coName: string): Promise<GuarantorRecord[]> {
+    const db = await this.openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readonly")
+      const store = tx.objectStore(STORE_NAME)
+      const results: GuarantorRecord[] = []
+
+      const request = store.openCursor()
+      const lowerQuery = query.toLowerCase()
+      const lowerCoName = coName.toLowerCase()
+
+      request.onsuccess = (e) => {
+        const cursor = (e.target as IDBRequest).result
+        if (cursor) {
+          const record = cursor.value
+
+          if (record["CO Name"] && record["CO Name"].toLowerCase().trim() === lowerCoName.trim()) {
+            // Then filter by search query
+            const searchableFields = ["Client ID", "Name", "CO Name", "Branch", "clientId", "name", "coName", "branch"]
+            const matches = searchableFields.some((field) => {
+              const value = record[field]
+              return value && value.toString().toLowerCase().includes(lowerQuery)
+            })
+
+            if (matches) {
+              results.push(record)
+            }
+          }
+
+          cursor.continue()
+        } else {
+          resolve(results)
+        }
+      }
+
+      request.onerror = (e) => reject(e)
+    })
+  }
+
   async getRecordCount(): Promise<number> {
     const db = await this.openDB()
 
@@ -331,6 +416,102 @@ export class GuarantorDB {
 
       req.onsuccess = () => resolve()
       req.onerror = (e) => reject(e)
+    })
+  }
+
+  async addUser(user: Omit<User, "id">): Promise<User> {
+    const db = await this.openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(USERS_STORE_NAME, "readwrite")
+      const store = tx.objectStore(USERS_STORE_NAME)
+      const request = store.add(user)
+
+      request.onsuccess = () => {
+        console.log("[v0] User added successfully")
+        resolve({ ...user, id: request.result as number })
+      }
+
+      request.onerror = (e) => {
+        console.log("[v0] Error adding user:", e)
+        reject(e)
+      }
+    })
+  }
+
+  async updateUser(id: number, user: Partial<User>): Promise<void> {
+    const db = await this.openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(USERS_STORE_NAME, "readwrite")
+      const store = tx.objectStore(USERS_STORE_NAME)
+
+      const getRequest = store.get(id)
+      getRequest.onsuccess = () => {
+        const existingUser = getRequest.result
+        const updatedUser = { ...existingUser, ...user }
+
+        const updateRequest = store.put(updatedUser)
+        updateRequest.onsuccess = () => {
+          console.log("[v0] User updated successfully")
+          resolve()
+        }
+        updateRequest.onerror = (e) => reject(e)
+      }
+
+      getRequest.onerror = (e) => reject(e)
+    })
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    const db = await this.openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(USERS_STORE_NAME, "readwrite")
+      const store = tx.objectStore(USERS_STORE_NAME)
+      const request = store.delete(id)
+
+      request.onsuccess = () => {
+        console.log("[v0] User deleted successfully")
+        resolve()
+      }
+      request.onerror = (e) => reject(e)
+    })
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const db = await this.openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(USERS_STORE_NAME, "readonly")
+      const store = tx.objectStore(USERS_STORE_NAME)
+      const index = store.index("username")
+      const request = index.get(username)
+
+      request.onsuccess = () => {
+        console.log("[v0] User lookup result for", username + ":", request.result ? "found" : "not found")
+        resolve(request.result)
+      }
+      request.onerror = (e) => {
+        console.log("[v0] Error getting user by username:", e)
+        reject(e)
+      }
+    })
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    const db = await this.openDB()
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(USERS_STORE_NAME, "readonly")
+      const store = tx.objectStore(USERS_STORE_NAME)
+      const request = store.getAll()
+
+      request.onsuccess = () => {
+        console.log("[v0] Retrieved", request.result.length, "users")
+        resolve(request.result)
+      }
+      request.onerror = (e) => reject(e)
     })
   }
 }
